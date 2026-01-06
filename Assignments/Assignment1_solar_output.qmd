@@ -1,0 +1,37 @@
+---
+title: "Assignment1_solar_output"
+format: html
+editor: visual
+---
+The energy produced by a solar panel system is given by
+
+$$
+E = A \cdot r \cdot H \cdot PR
+$$
+
+where:
+
+-   $E$ is the energy produced (kWh),
+-   $A$ is the solar panel area (m$^2$),
+-   $r$ is the panel yield (dimensionless, 0–1), representing manufacturer efficiency (typically $\sim 0.2$),
+-   $PR$ is the performance ratio (dimensionless, 0–1), accounting for site-specific losses (typically $\sim 0.75$),
+-   $H$ is the annual average solar radiation (kWh m$^{-2}$).
+
+Write your function in R; make sure that you add documentation; include default values for *r* and *PR* in the function definition; save the function in a single file to upload to Canvas.
+
+```{r}
+#' Calculate Solar Panel Energy Output
+#'
+#' @param panel_area 
+#' The solar panel area (m^2)
+#' @param solar_rad 
+#' The annual average solar radiation (kWh m^{-2})
+#' @returns
+#' The energy produced (kWh)
+
+solar_calculation <- function(panel_area, solar_rad){
+  energy_prod = (panel_area * .25 * solar_rad * .75)
+  return(energy_prod)
+}
+```
+
