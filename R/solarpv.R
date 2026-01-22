@@ -29,7 +29,7 @@ solarpv <- function(area, eff = 0.8, PR = 0.75, solar, clr = "blue", eunits = "k
   # make an internal function to adjust efficiency based on this
 
   effadjusted <- function(x, ethresh, eff) {
-    result <- ifelse((x > ethresh), eff * x, x * eff * (max(0, x / ethresh)))
+    result <- ifelse(x > ethresh, eff * x, x * eff * (max(0, x / ethresh)))
     return(result)
   }
 
@@ -66,3 +66,5 @@ solarpv <- function(area, eff = 0.8, PR = 0.75, solar, clr = "blue", eunits = "k
 
   return(list(annual = annualsolar[, c("year", "elect")], mean = mean(annualsolar$elect)))
 }
+
+

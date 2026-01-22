@@ -1,0 +1,42 @@
+---
+title: "assignment3_submission"
+format: html
+editor: visual
+author: Peter Vitale, Hylaea Miller, & Stephan Kadonoff
+---
+
+First we check the parameters for our chosen crop: Almonds
+
+```{r}
+source("crop_yield.R")
+crop_yield('list')
+```
+## Test the function
+
+```{r}
+
+# Read climate data
+clim <- read.table("clim.txt", header = TRUE)
+# Extract February minimum temperature for each year
+feb_tmin <- aggregate(tmin_c ~ year, 
+                      data = clim[clim$month == 2, ], 
+                      FUN = mean)
+# Extract January precipitation for each year
+jan_precip <- aggregate(precip ~ year, 
+                        data = clim[clim$month == 1, ], 
+                        FUN = sum)
+# Merge the datasets
+almond_data <- merge(feb_tmin, jan_precip, by = "year")
+names(almond_data) <- c("year", "feb_tmin", "jan_precip")
+# Calculate yield anomaly using the crop_yield function
+almond_data$yield_anomaly <- mapply(crop_yield,
+                                    crop = "Almonds",
+                                    temp_1 = almond_data$feb_tmin,
+                                    precip_1 = almond_data$jan_precip)
+# Display summary statistics
+cat("Maximum yield anomaly:", max(almond_data$yield_anomaly), "ton/acre\n")
+cat("Minimum yield anomaly:", min(almond_data$yield_anomaly), "ton/acre\n")
+cat("Mean yield anomaly:", mean(almond_data$yield_anomaly), "ton/acre\n")
+```
+
+
