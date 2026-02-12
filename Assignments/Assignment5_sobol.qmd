@@ -3,31 +3,38 @@ title: "Sobol Sensitivity Analysis Assignment"
 output:
   pdf_document: default
   html_document: default
+author: Peter Vitale
 ---
+```{r}
+library(here)
+library(tidyverse)
+library(sensitivity)
+library(purrr)
+library(here)
 
+# Import CATM
+source(here('R','Catm.R'))
+```
 
 *Assignment Part I*
 
-Choose one of the 3 papers below that provide an example of sensitivity analysis of model parameters.
-*Or* find another paper that uses model sensitivity analysis as part of understanding an enviromental topic
+Choose one of the 3 papers below that provide an example of sensitivity analysis of model parameters. *Or* find another paper that uses model sensitivity analysis as part of understanding an enviromental topic
 
 After going through the paper, write a paragraph describing how results of the sensitivity analysis reported on in the paper might contribute to understanding (or prediction) within an environmental problem solving or management context.
 
 Snow modeling
 
-Building Cooling Energy Mdoel
-
-Uranium in Groundwater Model
+One example of sensitivity analysis in the snow modeling paper by Houle et al. is their comparison of two commonly used snowfall models, VIC and SNOW-17. The Sobol analysis showed that the `maximum melt factor` exhibited the highest first-order and total-effect indices in the SNOW-17 model, indicating that melt dynamics dominate model behavior and contribute most to output variance. This result suggests that SNOW-17 is primarily controlled by temperature-driven melt processes and exhibits relatively low sensitivity to changes in other climatic or physical parameters. In contrast, the VIC model showed peak sensitivity to the `expA2` parameter, which controls the rate of snow albedo decay. This indicates that radiative and energy-balance processes play a larger role in governing VIC’s snowpack simulations. Overall, the Sobol results demonstrate that VIC is more sensitive to physical parameter uncertainty, while SNOW-17 behaves as a simpler, more robust model whose outputs are less responsive to parameter variation.
 
 *Assignment Part 2*
 
-Recall our model of atmospheric conductance $$
+Recall our model of atmospheric conductance 
 C_{at} = \frac{v_m}{6.25*{ln(\frac{z_m-z_d}{z_0})}^2}
 $$ $$
 z_d = k_d*h
 $$ $$
 z_0 = k_0*h
-$$
+
 
 $z_m$ is the height at which windspeed is measured - must be higher than the vegetation (cm), it is usually measured 200 cm above the vegetation
 
@@ -57,52 +64,159 @@ For vegetation height assume that height is somewhere between 3.5 and 5.5 m (but
 
 For the $k_d$ and $k_0$ parameters you can assume that they are normally distributed with standard deviation of 1% of their default values
 
-Use the Sobel approach to generate parameter values for the 4 parameters
+1.  Use the Sobel approach to generate parameter values for the 4 parameters
+2.  Run the atmospheric conductance model for these parameters
+3.  Plot conductance estimates in a way that accounts for parameter uncertainty
+4.  Plot conductance estimates against windspeed use the parameter that is 2nd in terms of total effect on response
+5.  Estimate the Sobel Indices for your output
+6.  Comment on what this tells you about how atmospheric conductance and its sensitivity to variation in windspeed differs in this setting as compared to the setting that we examined in class where windspeed was lower and less variable and vegetation was taller.
 
-Run the atmospheric conductance model for these parameters
+Submit a pdf or html document with your code, graphs, and answers to the questions on Canvas Due
 
-Plot conductance estimates in a way that accounts for parameter uncertainty
+1.  Use the Sobel approach to generate parameter values for the 4 parameters
+```{r}
 
-Plot conductance estimates against windspeed use the parameter that is 2nd in terms of total effect on response
 
-Estimate the Sobel Indices for your output
+# Generate Parameters 
+# generate two examples of random number from parameter distributions
 
-Comment on what this tells you about how atmospheric conductance and its sensitivity to variation in windspeed differs in this setting as compared to the setting that we examined in class where windspeed was lower and less variable and vegetation was taller.
+np <- 1000
 
-Submit a pdf or html document with your code, graphs, and answers to the questions on Canvas
-Due 
+k_d <- rnorm(mean = .7, sd = 0.007, n = np)
+k_o <- rnorm(mean = .1, sd = 0.001, n = np)
+v <- rnorm(mean = 300, sd = 50, n = np)
+height <- runif(n = np, min = 3.5, max = 5.5)
+
+X1 <- cbind.data.frame(k_o, k_d, height, v)
+
+# repeat sampling
+k_d <- rnorm(mean = .7, sd = 0.007, n = np)
+k_o <- rnorm(mean = .1, sd = 0.001, n = np)
+v <- rnorm(mean = 300, sd = 50, n = np)
+height <- runif(n = np, min = 3.5, max = 5.5)
+
+X2 <- cbind.data.frame(k_o, k_d, height, v)
+
+# there are different versions of sobol functions that have different approaches for estimating parameters and indices, we use an approach implemented by jansen
+
+sens_Catm_Sobol <- sobolSalt(model = NULL, X1, X2, nboot = 100)
+
+
+# Take a look at the Sobol generated sensitivity object
+# your parameters sets for sensitivity analysis are in X
+```
+
+2. Run the atmospheric conductance model for these parameters
+ 
+```{r}
+# run model for all parameter sets
+# make sure you give the parameters names
+
+parms <- as.data.frame(sens_Catm_Sobol$X)
+colnames(parms) <- colnames(X1)
+res <- pmap_dbl(parms, Catm)
+
+sens_Catm_Sobol <- sensitivity::tell(sens_Catm_Sobol, res)
+
+print(sens_Catm_Sobol)
+```
+
+3.  Plot conductance estimates in a way that accounts for parameter uncertainty
+
+
+```{r sobolplot}
+# graph two most sensitive parameters
+both <- cbind.data.frame(parms, catm = sens_Catm_Sobol$y)
+
+# look at overall gs sensitvity to uncertainty
+ggplot(both, aes(x = catm)) +
+  geom_histogram(bins = 40, fill = "grey80", color = "white") +
+labs(
+  x = "Atmospheric Conductance (mm/s)",
+  y = "Frequency",
+  title = "Uncertainty in Atmospheric Conductance"
+) +
+  geom_vline(xintercept = mean(both$catm), col = "cyan")+
+  theme_linedraw()
+```
+4.  Plot conductance estimates against windspeed use the parameter that is 2nd in terms of total effect on response
+
+```{r}
+
+# total effect - accounts for parameter interactions
+row.names(sens_Catm_Sobol$T) <- colnames(parms)
+sens_Catm_Sobol$T
+
+
+ggplot(both, aes(x = v, y = catm, col = height)) +
+  geom_point(alpha = 0.6) +
+  labs(
+    x = "Windspeed (cm/s)",
+    y = "Conductance (mm/s)",
+    color = "Vegetation height (m)",
+    title = "Atmospheric Conductance vs Windspeed"
+  ) +
+  scale_color_viridis_c(option = "magma", direction = -1) +
+  theme_minimal()
+```
+
+5. Estimate the Sobel Indices for your output
+
+
+```{r}
+# main effect:  partitions variance (main effect without co-variance) - sums approximately to one
+# useful to add names
+row.names(sens_Catm_Sobol$S) <- colnames(parms)
+
+print('The sensitivity analysis results are:'); (sens_Catm_Sobol$S)
+
+# total effect - accounts for parameter interactions
+row.names(sens_Catm_Sobol$T) <- colnames(parms)
+
+print('The total effect is:')
+sens_Catm_Sobol$T
+
+```
+
+6.  Comment on what this tells you about how atmospheric conductance and its sensitivity to variation in windspeed differs in this setting as compared to the setting that we examined in class where windspeed was lower and less variable and vegetation was taller.
+
+There is higher atmospheric conductance in this example when the Vegetation Height and the Windspeed are higher. With just height or just windspeed the conductance is higher, but this effect is compounded when added together. The model in class showed less linearity - signalling that a more variable higher windspeed with overall shorter vegetation leads to a more linear model of conductance. 
 
 *Grading Rubric*. Total points 80. (normalized to 10 for Canvas)
 
 **PART I (Paper Examples)**
 
-* Discussion of the implication of parameter uncertainty from example paper 
+-   Discussion of the implication of parameter uncertainty from example paper
 
-  * explanation directly relates to a specific parameter (10pts)
+    -   explanation directly relates to a specific parameter (10pts)
 
-  * explanation explores how parameter uncertainty might meaningfully impact results (10pts)
+    -   explanation explores how parameter uncertainty might meaningfully impact results (10pts)
 
 **PART II (Atmospheric Conductance and Sobol)**
 
-* Generation of parameter values using Sobol (10pts)
+-   Generation of parameter values using Sobol (10pts)
 
-* Running model for the parameters (10pts)
+-   Running model for the parameters (10pts)
 
-* Graph of uncertainty of the response variable
+-   Graph of uncertainty of the response variable
 
-  * meaningful graph (5pts)
+    -   meaningful graph (5pts)
 
-  * graphing style (axis labels, legibility) (5 pts)
+    -   graphing style (axis labels, legibility) (5 pts)
 
-* Graph of relationship between output and windspeed
+-   Graph of relationship between output and windspeed
 
-  * choice of color (see instructions) (5pts)
+    -   choice of color (see instructions) (5pts)
 
-  * graphing style (axis labels, legibility) (5 pts)
+    -   graphing style (axis labels, legibility) (5 pts)
 
-* Computing Sobol Indicators (10 pts)
+-   Computing Sobol Indicators (10 pts)
 
-* Discussion 
+-   Discussion
 
-  * correctly identifying how sensitivity to windspeed changed with setting (10pts)
+    -   correctly identifying how sensitivity to windspeed changed with setting (10pts)
+
+
+
+
 
