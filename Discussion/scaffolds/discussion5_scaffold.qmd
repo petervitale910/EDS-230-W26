@@ -12,6 +12,7 @@ editor: visual
 ## R code with carrying capacity {.scrollable}
 
 ```{r exampleode}
+library(here)
 library(deSolve)
 library(tidyverse)
 
@@ -20,20 +21,28 @@ source(here("R/dexppop_play.R"))
 dexppop_play
 
 # create parameter list
+initalrabbits = 2
+years = seq(1,100,by=2)
 
-
+newparms = list(r = .03, carry_capacity = 300)
 # apply solver
-
+results <- ode(initalrabbits, years, dexppop_play, newparms)
+head(results)
 
 # add more meaningful names
-
+colnames(results) <- c('year','p')
 ```
 
 ## Plot
 
 ```{r, plotodep}
 # plot
-
+ggplot(as.data.frame(results),
+       aes(x = year,
+           y = p))+
+  geom_point()+
+  labs(y = 'Population',
+       x = 'Year')
 ```
 
 ## Try again with different parameters {.scrollable}
@@ -41,22 +50,35 @@ dexppop_play
 ```{r exampleode2}
 # same initial condtions
 
+initalrabbits = 2
+years = seq(1,100,by=2)
+
 
 # try again with different parameters
+newparms = list(r = .04, carry_capacity = 500)
 
+results2 <- ode(initalrabbits, years, dexppop_play, newparms)
 
+colnames(results2) <- c('year','p_parm2')
 
 # look at results
-
+head(results2)
 
 # plot
 
+ggplot(as.data.frame(results2),
+       aes(x = year,
+           y = p))+
+  geom_point()+
+  labs(y = 'Population',
+       x = 'Year')
 
 # compare by combining into a single data frame
-
+both <- inner_join(as.data.frame(results), as.data.frame(results2))
 
 #both_p <- both %>% gather(key = "model", value = "P", -year)
 
+both_p <- both %>% pivot_longer(-year, names_to = "model", values_to = "P")
 
 ```
 
@@ -64,7 +86,10 @@ dexppop_play
 
 ```{r, plotb}
 # plot
-
+ggplot(both_p, aes(x = year,y = P, col = model)) +
+  geom_point() +
+  labs(y = "Population", 
+       x = "years")
 ```
 
 ## Extracting information from space-time results {.scrollable}
@@ -85,7 +110,17 @@ In class we've talking about summarizing results from dynamic models
 
 ```{r}
 source(here("R/diffusion.R"))
+resfast_fixtime <- diff1(initialC = 100,
+                         nx = 10,
+                         dx = .5,
+                         nt = 100,
+                         dt = .5,
+                         D = .2,
+                         area = 1)
 
+filled.contour(resfast_fixtime$conc, 
+               xlab = 'time',
+               ylab = 'distance')
 ```
 
 # Summarizing Model Output
@@ -104,7 +139,7 @@ Lets say this was a pollutant injected into a stream...
 
 # graph a single point in space through time
 # single column (time)
-
+plot(resfast_fixtime$conc[,8], ylab = 'Conc. after 3 spatial time units')
 ```
 
 -   what if we were concerned about all locations
@@ -112,10 +147,16 @@ Lets say this was a pollutant injected into a stream...
 ```{r all locations}
 # plot all trajectories
 # add a time column to concentration data frame and transform for plotting
-
+resl <- as.data.frame(resfast_fixtime$conc) %>% 
+  mutate(time = seq(1,100,by =1)) %>% 
+  pivot_longer(-time, names_to = 'distance',
+               values_to = 'conc')
+ggplot(resl, aes(x = time, y = conc, col = distance))+
+  geom_line()
 
 # plot all places at each point in time
-
+ggplot(resl, aes(time, conc, group = time)) +
+  geom_boxplot()
 ```
 
 # Spatial summaries
@@ -125,14 +166,24 @@ Lets say this was a pollutant injected into a stream...
 ```{r spatial summaries}
 
 # use apply to calculate the spatial variation for each row (e.g for each time point)
+cvar <- resfast_fixtime$conc %>% 
+  apply(1,var)
 
+cmean <- resfast_fixtime$conc %>% 
+  apply(1,mean)
+
+spatial_aver = cbind.data.frame(cvar, cmean, time = seq(1,100))
 # notice its the same as the number of time units (nt) used above
 
 # plot spatial variation through time
-
+ggplot(spatial_aver, aes(x = time, y = cvar))+
+  geom_line() +
+  labs(y = "Spatial Variation")
 
 # plot coefficient of variation (so standard deviation divided by the mean)
-
+ggplot(spatial_aver, aes(x = time, y = 100 * sqrt(cvar) / cmean))+
+  geom_line() +
+  labs(y = "Spatial Variation")
 ```
 
 ## it is helpful to turn the summary into a function that you can apply to the dynamic models output
