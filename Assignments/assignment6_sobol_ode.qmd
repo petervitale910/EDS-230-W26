@@ -1,0 +1,219 @@
+---
+title: "Assignment 6: Sobol Sensitivity Analysis with an ODE"
+format: pdf
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+library(deSolve)
+library(sensitivity)
+library(tidyverse)
+```
+
+## Forest Growth Model
+
+The forest growth ODE is defined as:
+
+- If $C < \text{canopy\_thresh}$: $\frac{dC}{dt} = r \cdot C$ (exponential growth)
+- If $C \geq \text{canopy\_thresh}$: $\frac{dC}{dt} = g \cdot \left(1 - \frac{C}{K}\right)$ (linear growth toward carrying capacity)
+
+```{r}
+source(here::here("forest_growth.R"))
+```
+
+## Part 1: Run Model for 300 Years
+
+```{r}
+# Parameters
+params <- list(
+  r             = 0.01,   # exponential growth rate (pre-canopy closure)
+  g             = 2,      # linear growth rate (post-canopy closure), kgC/year
+  K             = 250,    # carrying capacity, kgC
+  canopy_thresh = 50      # canopy closure threshold, kgC
+)
+
+# Initial conditions and time
+C0    <- c(C = 10)        # initial forest size, kgC
+times <- seq(0, 300, by = 1)
+
+# Solve ODE
+result <- ode(y = C0, times = times, func = forest_growth, parms = params)
+result_df <- as.data.frame(result)
+```
+
+## Part 2: Graph Trajectory
+
+```{r}
+ggplot(result_df, aes(x = time, y = C)) +
+  geom_line(color = "forestgreen", linewidth = 1.2) +
+  geom_vline(xintercept = result_df$time[which.min(abs(result_df$C - 50))],
+             linetype = "dashed", color = "brown", alpha = 0.6) +
+  annotate("text", x = result_df$time[which.min(abs(result_df$C - 50))] + 5,
+           y = 20, label = "Canopy closure\nthreshold", color = "brown", size = 3) +
+  labs(
+    title    = "Forest Growth Over 300 Years",
+    x        = "Time (years)",
+    y        = "Forest Size (kgC)"
+  ) +
+  theme_bw()
+```
+
+## Part 3: Sobol Sensitivity Analysis
+
+We explore how maximum forest size over 300 years varies with uncertainty in:
+
+- `r`: pre-canopy exponential growth rate
+- `g`: post-canopy linear growth rate
+- `K`: carrying capacity
+- `canopy_thresh`: canopy closure threshold
+
+All parameters are assumed normally distributed with mean = baseline and SD = 10% of mean.
+
+```{r}
+# Number of samples
+n_samples <- 1000
+
+# Means and SDs (10% of mean)
+means <- c(r = 0.01, g = 2, K = 250, canopy_thresh = 50)
+
+sds   <- means * 0.10
+
+# Generate two independent sample matrices
+set.seed(42)
+X1 <- as.data.frame(mapply(function(m, s) rnorm(n_samples, m, s),
+                            means, sds))
+
+X2 <- as.data.frame(mapply(function(m, s) rnorm(n_samples, m, s),
+                            means, sds))
+
+colnames(X1) <- colnames(X2) <- names(means)
+
+# Create Sobol object
+sobol_obj <- sobolSalt(model = NULL, X1 = X1, X2 = X2, scheme = "A", nboot = 100)
+colnames(sobol_obj$X) <- names(params)
+```
+
+```{r wrapper}
+p_wrapper <- function(r, 
+                      g, 
+                      K, 
+                      canopy_thresh, 
+                      initial_forest, 
+                      simtimes, 
+                      odefunc, 
+                      metricfunc) {
+  
+  parms <- list(r = r, 
+                g = g, 
+                K = K, 
+                canopy_thresh = canopy_thresh)
+  
+  result <- ode(y = initial_forest, times = simtimes, func = odefunc, parms = parms, method = "euler")
+  
+  result <- data.frame(time = result[, 1], C = result[, 2])
+  
+  return(metricfunc(result))
+}
+
+
+```
+
+```{r}
+# Set max forest function 
+compute_max_forest <- function(result) {
+  max(result$C)
+}
+
+# Run wrapper over all Sobol parameter sets
+max_forest <-pmap(as.data.frame(sobol_obj$X), p_wrapper,
+                initial_forest = c(C = 10),
+                simtimes = seq(0, 300, by = 1),
+                odefunc = forest_growth,
+                metricfunc = compute_max_forest)
+
+
+# Tell Sobol about the outputs
+tell(sobol_obj, unlist(max_forest))
+```
+
+## Part 4: Sensitivity Analysis Results
+
+```{r}
+# Extract indices
+S  <- sobol_obj$S   # first-order
+T  <- sobol_obj$T   # total-order
+
+cat("First-order Sobol indices (S):\n")
+print(S)
+cat("\nTotal-order Sobol indices (T):\n")
+print(T)
+```
+
+```{r fig.cap="Distribution of maximum forest size (kgC) across Sobol parameter samples."}
+plot_df <- data.frame(max_C = as.numeric(max_forest))
+
+# Boxplot of max forest size
+plot_df %>% 
+  ggplot(aes(x = "", y = max_C)) +
+  geom_boxplot(fill = "lightgreen", color = "darkgreen", outlier.alpha = 0.3) +
+  labs(
+    title = "Sobol Sensitivity: Maximum Forest Size over 300 Years",
+    x     = NULL,
+    y     = "Maximum Forest Size (kgC)"
+  ) +
+  theme_bw()
+```
+
+```{r sobol-barplot, fig.cap="First-order and total-order Sobol sensitivity indices for each parameter."}
+# Bar plot of indices
+indices_df <- bind_rows(
+  S %>%  mutate(index = "First-order (S)",  param = rownames(S)),
+  T %>%  mutate(index = "Total-order (T)", param = rownames(T))
+)
+
+ggplot(indices_df, aes(x = param, y = original, fill = index)) +
+  geom_col(position = "dodge") +
+  geom_errorbar(aes(ymin = `min. c.i.`, ymax = `max. c.i.`),
+                position = position_dodge(0.9), width = 0.25) +
+  scale_fill_manual(values = c("steelblue", "coral")) +
+  labs(
+    title = "Sobol Sensitivity Indices",
+    x     = "Parameter",
+    y     = "Sobol Index",
+    fill  = "Index Type"
+  ) +
+  theme_bw()
+```
+
+## Part 5: Extra Credit — Forest Size at 100 Years
+
+```{r}
+compute_forest_100 <- function(result) {
+  result$C[result$time == 100]
+}
+
+sobol_100 <- sobolSalt(model = NULL, X1 = X1, X2 = X2, scheme = "A", nboot = 100)
+colnames(sobol_100$X) <- c("r", "g", "K", "canopy_thresh")
+
+results_100 <- pmap(as.data.frame(sobol_100$X), p_wrapper,
+                    initial_forest = c(C = 10),
+                    simtimes = seq(0, 100, by = 1),
+                    odefunc = forest_growth,
+                    metricfunc = compute_forest_100)
+
+colnames(sobol_100$X) <- c("r", "g", "K", "canopy_thresh")
+tell(sobol_100, unlist(results_100))
+
+print(sobol_100$S)
+print(sobol_100$T)
+```
+
+## Discussion
+
+The sensitivity analysis reveals that **carrying capacity (K)** and the **post-canopy growth rate (g)** have the largest influence on maximum forest size, which makes intuitive sense since K is the ceiling and g controls how quickly the forest approaches it once canopy closure is reached. In contrast, the pre-canopy exponential rate `r` has relatively low sensitivity because forests spend less time in that phase over a 300-year horizon.
+
+From a climate perspective, this matters because rising temperatures and shifting precipitation could alter both `g` (net productivity of closed-canopy forests) and `K` (the carbon carrying capacity, which depends on soil quality and water availability). If climate stress reduces `K` or `g`, our models would systematically overestimate long-term carbon sequestration potential, with important implications for carbon accounting and forest-based climate mitigation strategies.
+```

@@ -1,0 +1,193 @@
+---
+title: "Assignment 7"
+format: html
+editor: visual
+author: Peter Vitale
+date: '2026-03-09'
+cache: TRUE
+---
+
+## Import source function and packages 
+
+```{r}
+pacman::p_load(
+  'deSolve',
+  'here',
+  'tidyverse',
+  'sensitivity'
+)
+
+source(here::here('R', 'lotvmodK.R'))
+```
+
+
+## 1. Run the model
+
+```{r}
+#| warning: false
+#| message: false
+#| results: hide
+
+
+times <- seq(0, 50, by=1)
+
+hunt_levels <- seq(0, 200, by=10)
+
+# Parameters
+pars <- c(rprey=0.95, 
+          alpha=0.01, 
+          eff=0.6, 
+          pmort=0.4, 
+          K=2000, 
+          min_prey=100)
+
+currpop <- c(prey=500, pred=50)
+
+# Solve ODE
+results <- lapply(hunt_levels, function(h) { # Set hunting levels
+  pars["hunt"] <- h # append different levels to hunt
+  # Run ODE
+  out <- ode(y=currpop, times=times, func=lotvmodK, parms=pars)
+  #Make sure its a dataframe 
+  as.data.frame(out)
+})
+```
+
+## 2. Compute Stability 
+```{r}
+compute_stability <- function(result) {
+  after10 <- result[result$time > 10, "prey"]
+  if (length(after10) == 0) return(0)
+  min(after10)
+}
+
+stability <- sapply(results, compute_stability)
+
+stability_df <- data.frame(hunt = hunt_levels, min_prey = stability)
+```
+
+## 3. Plot outcomes 
+```{r}
+ggplot(stability_df, aes(x=hunt, y=min_prey)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept=100, color="firebrick", linetype="dashed") +
+  labs(x="Hunting Level", y="Minimum Prey Population (after year 10)",
+       title="Effect of Hunting on Prey Stability")+
+  theme_minimal()
+```
+
+## 4. Adding uncertainty
+
+Now that we have the basic framework, we can add uncertainty. I chose this hunting metric as hunting is usually regulated to a specific amount, so having hunting be a quantity instead of a proportion made the most sense to me.  
+
+```{r}
+#| warning: false
+#| message: false
+#| results: hide
+
+
+n_sims <- 100
+
+uncertainty_results <- lapply(1:n_sims, function(i) {
+  # Vary parameters slightly around best guesses
+  pars_i <- c(
+    rprey = rnorm(1, mean=0.95, sd=0.1),
+    alpha = rnorm(1, mean=0.01, sd=0.001),
+    eff   = rnorm(1, mean=0.6,  sd=0.05),
+    pmort = rnorm(1, mean=0.4,  sd=0.05),
+    K     = 2000,
+    min_prey = 100
+  )
+  
+  # Steps 1-2 for this parameter set
+  sapply(hunt_levels, function(h) {
+    pars_i["hunt"] <- h
+    
+  
+  out <- ode(y=currpop, times=times, func=lotvmodK, parms=pars_i)
+  
+    compute_stability(as.data.frame(out))
+  })
+})
+```
+
+## 5. Plotting Uncertainty 
+
+```{r}
+uncertainty_df <- do.call(rbind, lapply(1:n_sims, function(i) {
+  data.frame(hunt=hunt_levels, min_prey=uncertainty_results[[i]], sim=i)
+}))
+
+ggplot(uncertainty_df, aes(x=hunt, y=min_prey, group=sim)) +
+  geom_line(alpha=0.1) +
+  geom_hline(yintercept=100, color="firebrick", linetype="dashed") +
+  labs(x="Hunting Level", y="Minimum Prey Population",
+       title="Stability Under Parameter Uncertainty")+
+  theme_minimal()
+```
+## 6. Sobol Sensitivity Analysis
+```{r}
+#| warning: false
+#| message: false
+#| results: hide
+n <- 1000
+X1 <- data.frame(
+  rprey = rnorm(n, mean=0.95, sd=0.1),
+  alpha = rnorm(n, mean=0.01, sd=0.001),
+  eff   = rnorm(n, mean=0.6,  sd=0.05),
+  pmort = rnorm(n, mean=0.4,  sd=0.05)
+)
+X2 <- data.frame(
+  rprey = rnorm(n, mean=0.95, sd=0.1),
+  alpha = rnorm(n, mean=0.01, sd=0.001),
+  eff   = rnorm(n, mean=0.6,  sd=0.05),
+  pmort = rnorm(n, mean=0.4,  sd=0.05)
+)
+sens <- sobolSalt(model=NULL, X1, X2, scheme="A", nboot=100)
+
+run_model <- function(params) {
+  apply(params, 1, function(p) {
+    pars_i <- c(
+      rprey = max(0.01, p[1]),
+      alpha = max(0.001, p[2]),
+      eff   = max(0.01, p[3]),
+      pmort = max(0.01, p[4]),
+      K=2000, min_prey=100, hunt=50
+    )
+    out <- tryCatch(
+      ode(y=currpop, times=times, func=lotvmodK, parms=pars_i),
+      error = function(e) NULL
+    )
+    if (is.null(out)) return(0)
+    compute_stability(as.data.frame(out))
+  })
+}
+
+y <- run_model(sens$X)
+tell(sens, y)
+```
+
+## 7. Plot Sobol Results
+```{r}
+#| warning: false
+#| message: false
+sobol_df <- data.frame(
+  parameter = c("rprey", "alpha", "eff", "pmort"),
+  S1 = sens$S[, "original"],
+  T1 = sens$T[, "original"]
+) %>%
+  pivot_longer(cols = c(S1, T1), names_to = "index", values_to = "value")
+
+ggplot(sobol_df, aes(x=parameter, y=value, fill=index)) +
+  geom_col(position="dodge") +
+  labs(x="Parameter", y="Sensitivity Index",
+       fill="Index",
+       title="Sobol Sensitivity Indices") +
+  theme_minimal()
+```
+
+## 8. Discussion 
+
+alpha and pmort most strongly influence prey stability, suggesting that predator-prey interaction rate and predator mortality are the key drivers of system behavior under hunting pressure. rprey has negligible direct influence but contributes through interactions.
+

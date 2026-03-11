@@ -291,12 +291,26 @@ msage = readRDS(here("Data/msage.RDS"))
 #View(msage)
 
 # first rearrange so we can plot all results
-
+msage_long <- msage %>% 
+  pivot_longer(cols = -c('obs', 'wy', 'day',
+                         'month', 'year', 'date'),
+               names_to = 'run',
+               values_to = 'str')
+  
 # now plot
-
+msage_long %>% 
+  filter(wy == 1970) %>% 
+  ggplot(aes(x = as.Date(date), 
+             y = str, 
+             color = run))+ 
+  geom_line()+
+  theme(legend.position = 'none')+
 
 # lets add observed streamflow
-
+geom_line(aes(x = as.Date(date),
+              y =obs),
+              linewidth =2, 
+          col = 'black')
 
 # try another year
 ```
@@ -312,10 +326,21 @@ nse
 
 # compute nse for each parameter set
 
+res <- msage %>% 
+  select(-c(date, wy, obs, day, year, wy)) %>% 
+  map_dbl(nse, o = msage$obs)
 
+best_parameter <- which.max(res)
 
 # basic calibration would be picking a single parameters set
-
+ggplot(msage, aes(as.Date(date), 
+                   msage[,best_parameter]))+
+  geom_point()+
+  geom_line(aes(x = as.Date(date),
+              y =obs),
+              linewidth =.5,
+            alpha = .5,
+          col = 'red')
 # lets plot the best parameter set
 
 
@@ -330,6 +355,17 @@ nse
 -   consider subseting to a specific season (e.g. summer) or specific flow conditions (e.g. low flow) and compute your metric for that subset of the data
 
 -   add the quiz the column number of your metric
+
+```{r}
+msage_sep <- msage %>% 
+  filter(month == 9)
+
+res <- msage_sep %>% 
+  select(-c(date, wy, obs, day, year, wy)) %>% 
+  map_dbl(nse, o = msage_sep$obs)
+
+best_parameter <- which.max(res)
+```
 
 ## Equifinality
 

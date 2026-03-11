@@ -11,7 +11,7 @@
 #' @examples
 #' lotvod(t = 1, pop = list(1, 2), pop = list(0.5, 0.3, 0.2, 0.2))
 #'
-#' pars <- c(rprey = 0.5, alpha = 0.3, eff = 0.2, pmort = 0.2)
+#' pars <- c(rprey = 0.5, alpha = 0.3, eff = 0.2, pmort = 0.2, hunt = 75, min_prey = 40)
 #' currpop <- c(prey = 1, pred = 1)
 #  days = seq(from=1,to=20)
 #' res <- ode(func = lotvmod, y = currpop, times = days, parms = pars)
@@ -24,7 +24,8 @@
 
 lotvmodK <- function(t, pop, pars) {
   with(as.list(c(pars, pop)), {
-    dprey <- rprey * (1 - prey / K) * prey - alpha * prey * pred
+    actual_hunt <- ifelse(prey > min_prey, min(hunt, prey), 0)
+    dprey <- rprey * (1 - prey/K) * prey - alpha * prey * pred - actual_hunt
     dpred <- eff * alpha * prey * pred - pmort * pred
     return(list(c(dprey, dpred)))
   })

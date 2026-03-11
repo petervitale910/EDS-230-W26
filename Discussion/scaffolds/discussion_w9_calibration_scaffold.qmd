@@ -310,7 +310,10 @@ p1+geom_line(data=subset(msage, wy == 1970), aes(as.Date(date), obs), linewidth=
 
 # try another year
 
-
+ggplot(subset(msagel, wy == 1985), aes(as.Date(date),
+                                       str, color = run))+
+  geom_line(data = subset(msagel, wy == 1985),aes(x = as.Date(date), y = obs))+
+  theme(legend.position = 'none')
 #try a month from a year
 
 ```
@@ -331,7 +334,8 @@ res = msage %>%
   map_dbl(nse, o=msage$obs)
 
 #alternatively
-
+param_runs = msage %>% select(-date, -month, -day, -year, -wy, -obs )
+res = map_dbl(.x=param_runs, .f=nse, o=msage$obs)
 
 head(res)
 summary(res)
@@ -344,9 +348,25 @@ ggplot(msage, aes(as.Date(date), msage[,best_par]))+geom_line(col="red")+
   geom_line(data=msage, aes(as.Date(date), obs), col="black", linetype=2)+labs(y="Streamflow", x="Date")
 
 # what would be acceptable?
+pres = ggplot(data=as.data.frame(res)) + geom_boxplot(aes(y=res))
+res_thresh = summary(res)["3rd Qu."]
+accept_res = res[which(res > res_thresh)]
+pres + geom_boxplot(data=as.data.frame(accept_res), aes(y=accept_res), col="red")
+
+summary(res)
+quantile(res, probs = c(0,0.25,0.5,0.75,1))
 
 
 #try with months
+msage_month = msage %>% 
+  filter(month==5)
+
+res2 = msage_month %>%
+  select(-date, -month, -day, -year, -wy, -obs ) %>% 
+  map_dbl(nse, o=msage_month$obs)
+
+head(res)
+head(res2)
 
 ```
 
